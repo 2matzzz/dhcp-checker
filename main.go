@@ -1,11 +1,23 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
+	"io/ioutil"
 	"log"
+	"net/http"
 
+	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/client4"
 )
+
+type Result struct {
+	Discover bool `json:"discover"`
+	Offer    bool `json:"offer"`
+	Request  bool `json:"request"`
+	Ack      bool `json:"ack"`
+}
 
 var (
 	iface = flag.String("i", "eth0", "Interface to configure via DHCP")
@@ -15,28 +27,49 @@ func main() {
 	flag.Parse()
 	log.Printf("Starting DHCP client on interface %s", *iface)
 
-	// NewClient sets up a new DHCPv6 client with default values
-	// for read and write timeouts, for destination address and listening
-	// address
 	client := client4.NewClient()
 
-	// Exchange runs a Solicit-Advertise-Request-Reply transaction on the
-	// specified network interface, and returns a list of DHCPv6 packets
-	// (a "conversation") and an error if any. Notice that Exchange may
-	// return a non-empty packet list even if there is an error. This is
-	// intended, because the transaction may fail at any point, and we
-	// still want to know what packets were exchanged until then.
-	// A default Solicit packet will be used during the "conversation",
-	// which can be manipulated by using modifiers.
 	conversation, err := client.Exchange(*iface)
 
+	var result Result
 	// Summary() prints a verbose representation of the exchanged packets.
 	for _, packet := range conversation {
-		log.Print(packet.Summary())
+		switch mt := packet.MessageType(); mt {
+		case dhcpv4.MessageTypeDiscover:
+			result.Discover = true
+		case dhcpv4.MessageTypeOffer:
+			result.Offer = true
+		case dhcpv4.MessageTypeRequest:
+			result.Request = true
+		case dhcpv4.MessageTypeAck:
+			result.Ack = true
+		}
 	}
-	// error handling is done *after* printing, so we still print the
-	// exchanged packets if any, as explained above.
+
 	if err != nil {
 		log.Fatal(err)
 	}
+	postResult(result)
+}
+
+func postResult(result Result) {
+	b, err := json.Marshal(result)
+	log.Print(string(b))
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	url := "http://harvest.soracom.io"
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(b))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	_, _ = ioutil.ReadAll(resp.Body)
 }
