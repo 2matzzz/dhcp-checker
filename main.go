@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -13,10 +14,11 @@ import (
 )
 
 type Result struct {
-	Discover bool `json:"discover"`
-	Offer    bool `json:"offer"`
-	Request  bool `json:"request"`
-	Ack      bool `json:"ack"`
+	Discover int    `json:"discover"`
+	Offer    int    `json:"offer"`
+	Request  int    `json:"request"`
+	Ack      int    `json:"ack"`
+	Message  string `json:"message"`
 }
 
 var (
@@ -29,25 +31,27 @@ func main() {
 
 	client := client4.NewClient()
 
+	var result Result
 	conversation, err := client.Exchange(*iface)
 
-	var result Result
 	// Summary() prints a verbose representation of the exchanged packets.
 	for _, packet := range conversation {
 		switch mt := packet.MessageType(); mt {
 		case dhcpv4.MessageTypeDiscover:
-			result.Discover = true
+			result.Discover = 1
 		case dhcpv4.MessageTypeOffer:
-			result.Offer = true
+			result.Offer = 1
 		case dhcpv4.MessageTypeRequest:
-			result.Request = true
+			result.Request = 1
 		case dhcpv4.MessageTypeAck:
-			result.Ack = true
+			result.Ack = 1
 		}
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		result.Message = fmt.Sprintf("%s", err)
+	} else {
+		result.Message = "None"
 	}
 	postResult(result)
 }
